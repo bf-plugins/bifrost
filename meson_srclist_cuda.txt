@@ -1,0 +1,12 @@
+src/fdmt.cu
+src/fir.cu
+src/guantize.cu
+src/gunpack.cu
+src/linalg.cu
+src/linalg_kernels.cu
+src/reduce.cu
+src/romein.cu
+src/romein_kernels.cu
+src/transpose.cu
+src/fft.cu
+src/fft_kernels.cu

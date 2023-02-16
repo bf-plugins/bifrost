@@ -1,0 +1,6 @@
+[wrap-file]
+directory = stringify
+
+[provide]
+program_names = bf_stringify
+stringify_exe = bf_stringify

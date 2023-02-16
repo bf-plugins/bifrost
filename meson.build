@@ -6,9 +6,14 @@ project('bifrost', 'cpp', 'cuda',
 #    default_options: ['debug=true', 'cpp_std=c++14']
 # to the project() call, but nvcc does not appear to get these passed on
 c_std = 'c++14'
-buildtype = 'debug'
-comp_flags = ['-g', '-std=c++14', '-DBF_CUDA_ENABLED=1']
-add_project_arguments(comp_flags, language : ['c', 'cpp', 'cuda'])
+buildtype = 'release'
+comp_flags = [ '-std=c++14', '-DBF_CUDA_ENABLED=1']
+add_project_arguments(comp_flags, 
+    language : ['c', 'cpp', 'cuda']
+    )
+
+cc = meson.get_compiler('cpp')
+
 
 # Load list of files to compile into shared object
 # Note: Meson does not allow * wildcard (deliberately)
@@ -16,25 +21,45 @@ add_project_arguments(comp_flags, language : ['c', 'cpp', 'cuda'])
 fs = import('fs') 
 srcs_cpp = fs.read('meson_srclist.txt').strip().split('\n')
 srcs_cu  = fs.read('meson_srclist_cuda.txt').strip().split('\n')
+srcs_cu_jit  = fs.read('meson_srclist_cuda_jit.txt').strip().split('\n')
 
 # Dependencies: CUDA
 cuda = import('unstable-cuda')
-cuda_flags = cuda.nvcc_arch_flags('11', '6.0, 6.1, 7.0')
-#cuda_flags2 = ['-DBF_CUDA_ENABLED=1']
-add_project_arguments([cuda_flags], language : ['cuda'])
+cuda_flags = cuda.nvcc_arch_flags('11', '5.0,5.2')
+cuda_flags2 = ['-Xcompiler', '-march=native', 
+               '-Xcompiler', '-fPIC -DPIC', '-dc']
+add_project_arguments([cuda_flags, cuda_flags2], language : ['cuda'])
 
 cuda_dep = dependency('cuda', version : '>=11', 
-                      modules : ['cudart', 'nvrtc', 'cufft', 'curand'])
+                      modules : ['cudart', 'nvrtc', 'culibos',
+                                 'cublas',  'curand'])
 
 openmp_dep = dependency('openmp')
 
+
+r = run_command('nvprune', 
+            '/usr/local/cuda/lib64/libcufft_static.a',
+            cuda_flags, 
+            '-o', meson.build_root()+'/'+'libcufft_static_pruned.a'
+            )
+#cufft_static = cc.find_library('cufft_static', dirs: '/usr/local/cuda/lib64')
+cufft_pruned = cc.find_library('cufft_static_pruned', dirs: meson.build_root())
+
+
 # Subprojects
 gtest_dep = dependency('gtest')  # Wrap file exists
+stringify = find_program('bf_stringify')
+
+
+#foreach jit_src : srcs_cu_jit
+#  r = run_command('stringify.sh', jit_src,  
+#              capture: true, check: true)
+#endforeach
 
 # Build library (libbifrost)
 bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu],              
                      include_directories: ['src'],
-                     dependencies: [cuda_dep, gtest_dep, openmp_dep],
+                     dependencies: [cuda_dep, gtest_dep, openmp_dep, cufft_pruned],
                      install: true
                     )
 

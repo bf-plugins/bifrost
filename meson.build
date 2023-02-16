@@ -1,13 +1,15 @@
 # Meson build script for pacer imager
-project('bifrost', 'cpp', 'cuda', 
-        version: '1.0.0')
+project('bifrost', 'cpp', 'cuda', 'c',
+        version: '1.0.0',
+        default_options: ['debug=false', 'cpp_std=c++14', 'cuda_std=c++14']
+        )
 
 # Basic setup -- We should be able to just add
 #    default_options: ['debug=true', 'cpp_std=c++14']
 # to the project() call, but nvcc does not appear to get these passed on
 c_std = 'c++14'
 buildtype = 'release'
-comp_flags = [ '-std=c++14', '-DBF_CUDA_ENABLED=1']
+comp_flags = ['-DBF_CUDA_ENABLED=1']
 add_project_arguments(comp_flags, 
     language : ['c', 'cpp', 'cuda']
     )
@@ -25,7 +27,7 @@ srcs_cu_jit  = fs.read('meson_srclist_cuda_jit.txt').strip().split('\n')
 
 # Dependencies: CUDA
 cuda = import('unstable-cuda')
-cuda_flags = cuda.nvcc_arch_flags('11', '5.0,5.2')
+cuda_flags = cuda.nvcc_arch_flags('11', '6.0,6.1')
 cuda_flags2 = ['-Xcompiler', '-march=native', 
                '-Xcompiler', '-fPIC -DPIC', '-dc']
 add_project_arguments([cuda_flags, cuda_flags2], language : ['cuda'])
@@ -46,9 +48,50 @@ r = run_command('nvprune',
 cufft_pruned = cc.find_library('cufft_static_pruned', dirs: meson.build_root())
 
 
+#------- Create config.h --------#
+conf_data = configuration_data()
+# Memory alignment
+conf_data.set('ALIGNMENT', '4096')
+
+# CUDA support
+conf_data.set('HAVE_CUDA', '1')
+conf_data.set('CUDA_VERSION', '11.0')
+conf_data.set('GPU_ARCHS', '60 61')
+conf_data.set('GPU_MIN_ARCH', '60')
+conf_data.set('GPU_MAX_ARCH', '61')
+conf_data.set('GPU_SHAREDMEM', '16384')
+conf_data.set('GPU_PASCAL_MANAGEDMEM', '1')
+conf_data.set('MAP_KERNEL_STDCXX', 'c++11')
+conf_data.set('HAVE_MAP_CACHE', '1')
+conf_data.set('PACKAGE_VERSION_MAJOR', '1')
+conf_data.set('PACKAGE_VERSION_MINOR', '0')
+
+# Features
+conf_data.set('HAVE_FLOAT128', '0')
+conf_data.set('HAVE_OPENMP', '1')
+conf_data.set('HAVE_NUMA', '1')
+conf_data.set('HAVE_HWLOC', '1')
+conf_data.set('HAVE_VMA', '0')
+
+# Debugging features
+conf_data.set('HAVE_DEBUG', '0')
+conf_data.set('HAVE_TRACE', '0')
+conf_data.set('HAVE_CUDA_DEBUG', '0')
+
+# Logging directory
+conf_data.set('HAVE_TMPFS', '/dev/shm/bifrost')
+
+# Apply config
+configure_file(input : 'src/bifrost/config.h.in',
+               output : 'config.h',
+               configuration : conf_data)
+
+#-------------------------------#
+
 # Subprojects
 gtest_dep = dependency('gtest')  # Wrap file exists
-stringify = find_program('bf_stringify')
+stringify = subproject('stringify')
+
 
 
 #foreach jit_src : srcs_cu_jit
@@ -58,7 +101,7 @@ stringify = find_program('bf_stringify')
 
 # Build library (libbifrost)
 bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu],              
-                     include_directories: ['src'],
+                     include_directories: ['src', 'src/bifrost'],
                      dependencies: [cuda_dep, gtest_dep, openmp_dep, cufft_pruned],
                      install: true
                     )

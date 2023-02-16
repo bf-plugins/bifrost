@@ -2,5 +2,5 @@
 directory = stringify
 
 [provide]
-program_names = bf_stringify
-stringify_exe = bf_stringify
+program_names = stringify
+stringify_exe = stringify

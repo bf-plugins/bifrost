@@ -1,0 +1,5 @@
+option('disable_cuda', type: 'boolean', value: false)
+option('disable_ibverbs', type: 'boolean', value: false)
+option('disable_hwloc', type: 'boolean', value: false)
+option('disable_numa', type: 'boolean', value: false)
+

@@ -1,29 +1,33 @@
-# Meson build script for BIFROST
+# Meson build script for bifrost #
 project('bifrost', 'cpp', 'cuda', 'c',
         version: '1.0.0',
         default_options: ['debug=false', 'cpp_std=c++14', 'cuda_std=c++14']
         )
-
-c_std = 'c++14'        
-buildtype = 'release'
-comp_flags = [ '-std=c++14', '-DBF_CUDA_ENABLED=1']
-add_project_arguments(comp_flags,
-    language : ['c', 'cpp', 'cuda']
-    )
-
+fs = import('fs') 
 cc = meson.get_compiler('cpp')
 
 #--------- Load source file lists ---------#
 # Note: Meson does not allow * wildcard (deliberately)
 # Instead, we use file generated from command: ls src/*.cpp > meson_srclist.txt
-fs = import('fs') 
+# Note 2: map.cpp is treated separately 
 srcs_cpp = fs.read('meson_srclist.txt').strip().split('\n')
 srcs_cu  = fs.read('meson_srclist_cuda.txt').strip().split('\n')
-srcs_cu_jit  = fs.read('meson_srclist_cuda_jit.txt').strip().split('\n')
+
+# Also define the JIT sources, from which .jit files are generated
+jit_srcs = ['ArrayIndexer.cuh', 
+            'Complex.hpp', 
+            'IndexArray.cuh',  
+            'ShapeIndexer.cuh', 
+            'Vector.hpp',   
+            'int_fastdiv.h'
+]
 #------------------------------------------#
 
 #------- Create base config.h --------#
 conf_data = configuration_data()
+conf_data.set('SRC_DIR', meson.source_root() / 'src')
+conf_data.set('BUILD_ROOT', meson.build_root())
+
 # Memory alignment
 conf_data.set('ALIGNMENT', '4096')
 # Features
@@ -47,7 +51,6 @@ cuda_dep = dependency('cuda', version : '>=11',
                       modules : ['cudart', 'nvrtc', 'culibos', 'cublas', 'curand'])
 
 if cuda_dep.found()
-    # TODO un-hardcode architecutre flags
     cuda_arch_flags = cuda.nvcc_arch_flags('11', 'Auto', 
                       detected: ['5.2','6.0','6.1','7.0','7.2','7.5','8.0','8.6'])
     add_project_arguments([cuda_arch_flags], language : ['cuda'])
@@ -56,40 +59,6 @@ if cuda_dep.found()
     nvprune = find_program('nvprune')
     nvcc    = find_program('nvcc')
     cuda_lib64_path = nvcc.full_path().replace('/bin/nvcc', '/lib64')
-    arch_flags_pruned = cuda.nvcc_arch_flags('11', '8.0')
-    arch_flags_pruned += cuda_arch_flags
-
-    cufft_pruned = custom_target('libcufft_static_pruned',
-        input: cuda_lib64_path / 'libcufft_static.a',
-        output: 'libcufft_static_pruned.a',
-        command: [nvprune, '@INPUT@', arch_flags_pruned, '-o', '@OUTPUT@'],
-        install: true,
-        install_dir:  meson.build_root()
-    )
-
-    # Now, compile cuFFT static library
-    cufft_static = static_library('fft_kernels', 
-               ['src/fft_kernels.cu', 'src/fft.cu'],
-               cuda_args: ['-dc'], 
-               include_directories: ['src'],
-               override_options: ['buildtype=release'],
-               build_by_default: true).extract_all_objects(recursive: false)
-    
-    # Next create _device_link.o
-    device_link_flags = ['-dlink', 
-                         '-Xcompiler', '"-march=native"',
-                         '-Xcompiler', '-fPIC', 
-                         '-Xcompiler', '-DPIC', 
-                         '-L.', '-lcufft_static_pruned']
-    device_link_flags += cuda_arch_flags
-
-    cufft_device_link = custom_target('_device_link',
-        input: cufft_static,
-        output: '_device_link.o',
-        command: [nvcc, '@INPUT@', device_link_flags, '-o', '@OUTPUT@'],
-        install: true,
-        install_dir:  meson.build_root()
-    )
 
     # CUDA support
     conf_data.set('HAVE_CUDA', '1')
@@ -133,55 +102,117 @@ foreach libname:libnames
 	endif
 endforeach
 
-if found_deps_dict.has_key('openmp')
+if found_deps_dict.has_key('openmp') and not get_option('disable_openmp')
     conf_data.set('HAVE_OPENMP', '1')
 endif
-if found_deps_dict.has_key('numa')
+if found_deps_dict.has_key('numa') and not get_option('disable_numa')
     conf_data.set('HAVE_NUMA', '1')
 endif
-if found_deps_dict.has_key('hwloc')
+if found_deps_dict.has_key('hwloc') and not get_option('disable_hwloc')
     conf_data.set('HAVE_HWLOC', '1')
 endif
-if found_deps_dict.has_key('vma')
+if found_deps_dict.has_key('vma') and not get_option('disable_vma')
     conf_data.set('HAVE_VMA', '1')
 endif
 #---------------------------------------#
 
-
-#TODO: get JIT stringify working
-stringify     = subproject('stringify')
-stringify_exe = find_program('stringify')
-#foreach jit_src : srcs_cu_jit
-#  r = run_command('stringify.sh', jit_src,  
-#              capture: true, check: true)
-#endforeach
-
-
-
-# Generate config.h file (prebuild step)
-configure_file(input : 'src/bifrost/config.h.in',
+#-------- Generate config.h ------------#
+configure_file(input : 'internal/config.h.in',
                output : 'config.h',
                configuration : conf_data)
-#-------------------------------#
+run_command('mkdir', '-p', meson.build_root() / 'bifrost', check: true)
+run_command('mv', meson.build_root()/'config.h', meson.build_root()/'bifrost/config.h', check: true)
+#---------------------------------------#
 
+#--------- GENERATE CUDA JIT SOURCES --------#
+if cuda_dep.found()
+    # Create CUDA JIT sources
+    message('generating JIT sources')
+    stringify_sh = configure_file(input : 'internal/stringify.sh.in',
+                    output : 'stringify.sh',
+                    configuration : conf_data)
 
-# Build library (libbifrost)
-bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu, cufft_device_link],              
+    stringify_exe = executable('stringify', 
+                        ['internal/stringify.cpp'], 
+                        install: true)
+
+    jit_deps = []
+    foreach jit_src:jit_srcs
+        _jit_dep = custom_target(jit_src,
+            input: stringify_exe,     # This line ensures stringify is compiled
+            output: jit_src + '.jit',
+            command: ['bash', 'stringify.sh', jit_src],
+        )
+        jit_deps += [_jit_dep]
+    endforeach
+endif
+#------------------------------------------#
+
+#--------- BUILD _device_link.o (cuFFT) ----------#
+if cuda_dep.found()
+    # Create pruned static library for CUFFT
+    arch_flags_pruned = cuda.nvcc_arch_flags('11', '8.0')
+    arch_flags_pruned += cuda_arch_flags
+
+    cufft_pruned = custom_target('libcufft_static_pruned',
+        input: cuda_lib64_path / 'libcufft_static.a',
+        output: 'libcufft_static_pruned.a',
+        command: [nvprune, '@INPUT@', arch_flags_pruned, '-o', '@OUTPUT@'],
+        install: true,
+        install_dir:  meson.build_root()
+    )
+
+    # Now, compile cuFFT static library
+    cufft_static = static_library('fft_kernels', 
+               ['src/fft_kernels.cu', 'src/fft.cu'],
+               cuda_args: ['-dc'], 
+               include_directories: ['src'],
+               override_options: ['buildtype=release'],
+               build_by_default: true).extract_all_objects(recursive: false)
+    
+    # Next create _device_link.o
+    device_link_flags = ['-dlink', 
+                         '-Xcompiler', '"-march=native"',
+                         '-Xcompiler', '-fPIC', 
+                         '-Xcompiler', '-DPIC', 
+                         '-L.', '-lcufft_static_pruned']
+    device_link_flags += cuda_arch_flags
+
+    sl_cufft_device_link = custom_target('_device_link',
+        input: cufft_static,
+        output: '_device_link.o',
+        command: [nvcc, '@INPUT@', device_link_flags, '-o', '@OUTPUT@'],
+        install: true,
+        install_dir:  meson.build_root()
+    )
+endif
+#----------------------------------------#
+
+#-------- Build bifrost library ---------#
+# Compile map static library, with generated JIT sources
+sl_bf_map = static_library('bf_map', 
+            ['src/map.cpp'],
+            include_directories: ['src'],
+            build_by_default: true,
+            dependencies: [cuda_dep],
+            sources: jit_deps  # Makes sure stringify is run first
+            )
+
+# Now compile main bifrost library
+bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu, 
+                                  sl_cufft_device_link, sl_bf_map],              
                      include_directories: ['src'],
                      dependencies: [cuda_dep, found_deps],
-                     install: true,
-                     override_options: ['buildtype=release']
-                    )
+                     install: true
+                   )
 
-#TODO build tests, make optional
-
-# Create pkg-config file
+# Generate pkg-config file
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(
     bifrost_lib,
     description: 'A stream processing framework for real-time radio astronomy pipelines.',
 )
+ #--------------------------------------#                   
 
-# Subdirectories 
-# subdir('examples')
-# subdir('include')
+#TODO build tests
+

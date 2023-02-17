@@ -48,9 +48,9 @@ cuda_dep = dependency('cuda', version : '>=11',
 
 if cuda_dep.found()
     # TODO un-hardcode architecutre flags
-    cuda_flags = cuda.nvcc_arch_flags('11', '6.0,6.1')
-    cuda_flags2 = ['-Xcompiler', '-march=native',
-                '-Xcompiler', '-fPIC -DPIC', '-dc']
+    cuda_flags = cuda.nvcc_arch_flags('11', '5.2,6.0,6.1')
+    message('CUDA YO!!', cuda_flags)
+    cuda_flags2 = ['-dc']
     add_project_arguments([cuda_flags, cuda_flags2], language : ['cuda'])
 
     # Create pruned static library for CUFFT
@@ -123,11 +123,11 @@ endif
 
 
 #TODO: get JIT stringify working
-stringify = subproject('stringify')
-foreach jit_src : srcs_cu_jit
-  r = run_command('stringify.sh', jit_src,  
-              capture: true, check: true)
-endforeach
+#stringify = subproject('stringify')
+#foreach jit_src : srcs_cu_jit
+#  r = run_command('stringify.sh', jit_src,  
+#              capture: true, check: true)
+#endforeach
 
 
 
@@ -141,7 +141,7 @@ configure_file(input : 'src/bifrost/config.h.in',
 
 # Build library (libbifrost)
 bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu],              
-                     include_directories: ['src', 'src/bifrost'],
+                     include_directories: ['src'],
                      dependencies: [cuda_dep, found_deps, cufft_pruned],
                      install: true
                     )

@@ -1,4 +1,4 @@
-# Meson build script for pacer imager
+# Meson build script for BIFROST
 project('bifrost', 'cpp', 'cuda', 'c',
         version: '1.0.0',
         default_options: ['debug=false', 'cpp_std=c++14', 'cuda_std=c++14']
@@ -49,19 +49,31 @@ cuda_dep = dependency('cuda', version : '>=11',
 if cuda_dep.found()
     # TODO un-hardcode architecutre flags
     cuda_flags = cuda.nvcc_arch_flags('11', '5.2,6.0,6.1')
-    message('CUDA YO!!', cuda_flags)
     cuda_flags2 = ['-dc']
     add_project_arguments([cuda_flags, cuda_flags2], language : ['cuda'])
-
+    
+    
     # Create pruned static library for CUFFT
+    # TODO: https://github.com/mesonbuild/meson/discussions/11411
     # TODO: un-hardcode /usr/local/cuda
-    r = run_command('nvprune', 
-                '/usr/local/cuda/lib64/libcufft_static.a',
-                cuda_flags, 
-                '-o', meson.build_root()+'/'+'libcufft_static_pruned.a'
-                )
+    # TODO: get arch flags using better method
+    nvprune = find_program('nvprune')
+    arch_flags_pruned = cuda.nvcc_arch_flags('11', '6.0,6.1,8.0')
+    cufft_pruned = custom_target('libcufft_static_pruned',
+        input: '/usr/local/cuda/lib64/libcufft_static.a',
+        output: 'libcufft_static_pruned.a',
+        command: [nvprune, '@INPUT@', arch_flags_pruned, '-o', '@OUTPUT@'],
+        install: true,
+        install_dir:  meson.build_root()
+    )
+    #message('Pruned:', cufft_pruned.full_path())
+    #r = run_command('nvprune', 
+    #            '/usr/local/cuda/lib64/libcufft_static.a',
+    #            cuda_flags, 
+    #            '-o', meson.build_root()+'/'+'libcufft_static_pruned.a'
+    #            )
     #cufft_static = cc.find_library('cufft_static', dirs: '/usr/local/cuda/lib64')
-    cufft_pruned = cc.find_library('cufft_static_pruned', dirs: meson.build_root())
+    #cufft_pruned = cc.find_library('cufft_static_pruned', dirs: meson.build_root())
 
     
     #cuda_flags2 = ['-Xcompiler', '-march=native', 
@@ -123,7 +135,8 @@ endif
 
 
 #TODO: get JIT stringify working
-#stringify = subproject('stringify')
+stringify     = subproject('stringify')
+stringify_exe = find_program('stringify')
 #foreach jit_src : srcs_cu_jit
 #  r = run_command('stringify.sh', jit_src,  
 #              capture: true, check: true)
@@ -140,20 +153,20 @@ configure_file(input : 'src/bifrost/config.h.in',
 
 
 # Build library (libbifrost)
-bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu],              
-                     include_directories: ['src'],
-                     dependencies: [cuda_dep, found_deps, cufft_pruned],
-                     install: true
-                    )
+#bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu],              
+#                     include_directories: ['src'],
+#                     dependencies: [cuda_dep, found_deps, cufft_pruned],
+#                     install: true
+#                    )
 
 #TODO build tests, make optional
 
 # Create pkg-config file
-pkgconfig = import('pkgconfig')
-pkgconfig.generate(
-    bifrost_lib,
-    description: 'A stream processing framework for real-time radio astronomy pipelines.',
-)
+#pkgconfig = import('pkgconfig')
+#pkgconfig.generate(
+#    bifrost_lib,
+#    description: 'A stream processing framework for real-time radio astronomy pipelines.',
+#)
 
 # Subdirectories 
 # subdir('examples')

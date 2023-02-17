@@ -48,35 +48,49 @@ cuda_dep = dependency('cuda', version : '>=11',
 
 if cuda_dep.found()
     # TODO un-hardcode architecutre flags
-    cuda_flags = cuda.nvcc_arch_flags('11', '5.2,6.0,6.1')
-    cuda_flags2 = ['-dc']
-    add_project_arguments([cuda_flags, cuda_flags2], language : ['cuda'])
-    
+    cuda_arch_flags = cuda.nvcc_arch_flags('11', 'Auto', 
+                      detected: ['5.2','6.0','6.1','7.0','7.2','7.5','8.0','8.6'])
+    add_project_arguments([cuda_arch_flags], language : ['cuda'])
     
     # Create pruned static library for CUFFT
-    # TODO: https://github.com/mesonbuild/meson/discussions/11411
-    # TODO: un-hardcode /usr/local/cuda
-    # TODO: get arch flags using better method
     nvprune = find_program('nvprune')
-    arch_flags_pruned = cuda.nvcc_arch_flags('11', '6.0,6.1,8.0')
+    nvcc    = find_program('nvcc')
+    cuda_lib64_path = nvcc.full_path().replace('/bin/nvcc', '/lib64')
+    arch_flags_pruned = cuda.nvcc_arch_flags('11', '8.0')
+    arch_flags_pruned += cuda_arch_flags
+
     cufft_pruned = custom_target('libcufft_static_pruned',
-        input: '/usr/local/cuda/lib64/libcufft_static.a',
+        input: cuda_lib64_path / 'libcufft_static.a',
         output: 'libcufft_static_pruned.a',
         command: [nvprune, '@INPUT@', arch_flags_pruned, '-o', '@OUTPUT@'],
         install: true,
         install_dir:  meson.build_root()
     )
-    #message('Pruned:', cufft_pruned.full_path())
-    #r = run_command('nvprune', 
-    #            '/usr/local/cuda/lib64/libcufft_static.a',
-    #            cuda_flags, 
-    #            '-o', meson.build_root()+'/'+'libcufft_static_pruned.a'
-    #            )
-    #cufft_static = cc.find_library('cufft_static', dirs: '/usr/local/cuda/lib64')
-    #cufft_pruned = cc.find_library('cufft_static_pruned', dirs: meson.build_root())
 
+    # Now, compile cuFFT static library
+    cufft_static = static_library('fft_kernels', 
+               ['src/fft_kernels.cu', 'src/fft.cu'],
+               cuda_args: ['-dc'], 
+               include_directories: ['src'],
+               override_options: ['buildtype=release'],
+               build_by_default: true).extract_all_objects(recursive: false)
     
-    #cuda_flags2 = ['-Xcompiler', '-march=native', 
+    # Next create _device_link.o
+    device_link_flags = ['-dlink', 
+                         '-Xcompiler', '"-march=native"',
+                         '-Xcompiler', '-fPIC', 
+                         '-Xcompiler', '-DPIC', 
+                         '-L.', '-lcufft_static_pruned']
+    device_link_flags += cuda_arch_flags
+
+    cufft_device_link = custom_target('_device_link',
+        input: cufft_static,
+        output: '_device_link.o',
+        command: [nvcc, '@INPUT@', device_link_flags, '-o', '@OUTPUT@'],
+        install: true,
+        install_dir:  meson.build_root()
+    )
+
     # CUDA support
     conf_data.set('HAVE_CUDA', '1')
     conf_data.set('CUDA_VERSION', '11.0')
@@ -151,22 +165,22 @@ configure_file(input : 'src/bifrost/config.h.in',
 #-------------------------------#
 
 
-
 # Build library (libbifrost)
-#bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu],              
-#                     include_directories: ['src'],
-#                     dependencies: [cuda_dep, found_deps, cufft_pruned],
-#                     install: true
-#                    )
+bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu, cufft_device_link],              
+                     include_directories: ['src'],
+                     dependencies: [cuda_dep, found_deps],
+                     install: true,
+                     override_options: ['buildtype=release']
+                    )
 
 #TODO build tests, make optional
 
 # Create pkg-config file
-#pkgconfig = import('pkgconfig')
-#pkgconfig.generate(
-#    bifrost_lib,
-#    description: 'A stream processing framework for real-time radio astronomy pipelines.',
-#)
+pkgconfig = import('pkgconfig')
+pkgconfig.generate(
+    bifrost_lib,
+    description: 'A stream processing framework for real-time radio astronomy pipelines.',
+)
 
 # Subdirectories 
 # subdir('examples')

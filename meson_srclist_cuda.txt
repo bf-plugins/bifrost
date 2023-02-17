@@ -8,5 +8,3 @@ src/reduce.cu
 src/romein.cu
 src/romein_kernels.cu
 src/transpose.cu
-src/fft.cu
-src/fft_kernels.cu

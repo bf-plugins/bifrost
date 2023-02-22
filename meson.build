@@ -238,14 +238,6 @@ if get_option('generate_python_wrapper')
                    output : 'run_ctypesgen.sh',
                    configuration : py_conf_data)
 
-    #MESON WAR: py3.install_source()) cannot take a custom_target, so we add this conf value
-    #py_conf_data.set('PY_INSTALL_DIR', py3.get_install_dir(subdir: 'bifrost'))
-    #MESON WAR: py3.install_source()) cannot take a custom_target, so we run a post install copy script
-    #bf_py_post_install = configure_file(input : 'internal/run_post_install.sh.in',
-    #               output : 'run_post_install.sh',
-    #               configuration : py_conf_data)
-
-    #meson.add_install_script(bf_py_post_install)
 
     bf_py_version = configure_file(input : 'internal/version.py.in',
                    output : 'version.py',
@@ -256,7 +248,7 @@ if get_option('generate_python_wrapper')
                                      output: 'libbifrost_generated.py',
                                      command: ['bash', 'run_ctypesgen.sh'],
                                      install: true,
-                                     install_dir:  py3.get_install_dir(subdir: 'bifrost'))
+                                     install_dir: py3.get_install_dir(subdir: 'bifrost'))
     
     python_sources = fs.read('meson/python_srclist.txt').strip().split('\n')
     py3.install_sources([python_sources, bf_py_version], 
@@ -276,7 +268,8 @@ if get_option('generate_python_wrapper')
                         subdir: 'bifrost',
                         install: true
                    )
-
+    #TODO: PSRDADA GENERATION
+    #TODO: CTYPESGEN MODERNIZE
 endif
 #--------------------------------------# 
 

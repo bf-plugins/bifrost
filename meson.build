@@ -10,8 +10,8 @@ cc = meson.get_compiler('cpp')
 # Note: Meson does not allow * wildcard (deliberately)
 # Instead, we use file generated from command: ls src/*.cpp > meson_srclist.txt
 # Note 2: map.cpp is treated separately 
-srcs_cpp = fs.read('meson_srclist.txt').strip().split('\n')
-srcs_cu  = fs.read('meson_srclist_cuda.txt').strip().split('\n')
+srcs_cpp = fs.read('meson/srclist.txt').strip().split('\n')
+srcs_cu  = fs.read('meson/srclist_cuda.txt').strip().split('\n')
 
 # Also define the JIT sources, from which .jit files are generated
 jit_srcs = ['ArrayIndexer.cuh', 
@@ -27,6 +27,7 @@ jit_srcs = ['ArrayIndexer.cuh',
 conf_data = configuration_data()
 conf_data.set('SRC_DIR', meson.source_root() / 'src')
 conf_data.set('BUILD_ROOT', meson.build_root())
+conf_data.set('VERSION', meson.project_version())
 
 # Memory alignment
 conf_data.set('ALIGNMENT', '4096')
@@ -84,7 +85,8 @@ libnames = [
     'openmp', 
     'mlx4', 
     'ibverbs',
-    'gtest'
+    'gtest',
+    'psrdada'
     ]
 
 found_deps = []
@@ -113,6 +115,9 @@ if found_deps_dict.has_key('hwloc') and not get_option('disable_hwloc')
 endif
 if found_deps_dict.has_key('vma') and not get_option('disable_vma')
     conf_data.set('HAVE_VMA', '1')
+endif
+if found_deps_dict.has_key('psrdada') and not get_option('disable_psrdada')
+    conf_data.set('HAVE_PSRDADA', '1')      # Note: not currently used
 endif
 #---------------------------------------#
 
@@ -158,7 +163,7 @@ if cuda_dep.found()
         input: cuda_lib64_path / 'libcufft_static.a',
         output: 'libcufft_static_pruned.a',
         command: [nvprune, '@INPUT@', arch_flags_pruned, '-o', '@OUTPUT@'],
-        install: true,
+        install: false,
         install_dir:  meson.build_root()
     )
 
@@ -182,7 +187,7 @@ if cuda_dep.found()
         input: cufft_static,
         output: '_device_link.o',
         command: [nvcc, '@INPUT@', device_link_flags, '-o', '@OUTPUT@'],
-        install: true,
+        install: false,
         install_dir:  meson.build_root()
     )
 endif
@@ -212,7 +217,68 @@ pkgconfig.generate(
     bifrost_lib,
     description: 'A stream processing framework for real-time radio astronomy pipelines.',
 )
- #--------------------------------------#                   
+#--------------------------------------#                   
+
+#-------- Build bifrost python wrappers ---------#
+if get_option('generate_python_wrapper')
+    py_mod = import('python')
+    py3 = py_mod.find_installation()
+    py3_dep = py3.dependency()
+
+    
+
+    py_conf_data = configuration_data()
+    py_conf_data.set('PYTHON', py3.path())
+    py_conf_data.set('BUILD_ROOT', meson.build_root())
+    py_conf_data.set('SRC_DIR', conf_data.get('SRC_DIR'))
+    py_conf_data.set('VERSION', conf_data.get('VERSION'))
+
+
+    bf_py_ctypesgen = configure_file(input : 'internal/run_ctypesgen.sh.in',
+                   output : 'run_ctypesgen.sh',
+                   configuration : py_conf_data)
+
+    #MESON WAR: py3.install_source()) cannot take a custom_target, so we add this conf value
+    #py_conf_data.set('PY_INSTALL_DIR', py3.get_install_dir(subdir: 'bifrost'))
+    #MESON WAR: py3.install_source()) cannot take a custom_target, so we run a post install copy script
+    #bf_py_post_install = configure_file(input : 'internal/run_post_install.sh.in',
+    #               output : 'run_post_install.sh',
+    #               configuration : py_conf_data)
+
+    #meson.add_install_script(bf_py_post_install)
+
+    bf_py_version = configure_file(input : 'internal/version.py.in',
+                   output : 'version.py',
+                   configuration : py_conf_data)
+
+    bf_py_libbifrost = custom_target('libbifrost_generated',
+                                     input: stringify_exe,
+                                     output: 'libbifrost_generated.py',
+                                     command: ['bash', 'run_ctypesgen.sh'],
+                                     install: true,
+                                     install_dir:  py3.get_install_dir(subdir: 'bifrost'))
+    
+    python_sources = fs.read('meson/python_srclist.txt').strip().split('\n')
+    py3.install_sources([python_sources, bf_py_version], 
+                        subdir: 'bifrost')
+
+    bf_py_subdirs = ['blocks', 'telemetry', 'views', 'version']
+    foreach bf_py_subdir:bf_py_subdirs
+        subdir_filelist = fs.read('meson/python_'+bf_py_subdir+'_srclist.txt').strip().split('\n')
+        py3.install_sources(subdir_filelist, subdir: 'bifrost/'+bf_py_subdir)
+    endforeach
+
+    # Generate shared object
+    py3.extension_module('bifrost', [srcs_cpp, srcs_cu, 
+                                    sl_cufft_device_link, sl_bf_map],              
+                        include_directories: ['src'],
+                        dependencies: [cuda_dep, found_deps],
+                        subdir: 'bifrost',
+                        install: true
+                   )
+
+endif
+#--------------------------------------# 
 
 #TODO build tests
 

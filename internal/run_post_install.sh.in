@@ -1,0 +1,1 @@
+cp libbifrost_generated.py @PY_INSTALL_DIR@/

@@ -6,6 +6,8 @@ project('bifrost', 'cpp', 'cuda', 'c',
 fs = import('fs') 
 cc = meson.get_compiler('cpp')
 
+subdir('include')
+
 #--------- Load source file lists ---------#
 # Note: Meson does not allow * wildcard (deliberately)
 # Instead, we use file generated from command: ls src/*.cpp > meson_srclist.txt
@@ -26,6 +28,7 @@ jit_srcs = ['ArrayIndexer.cuh',
 #------- Create base config.h --------#
 conf_data = configuration_data()
 conf_data.set('SRC_DIR', meson.source_root() / 'src')
+conf_data.set('INCLUDE_DIR', meson.source_root() / 'include')
 conf_data.set('BUILD_ROOT', meson.build_root())
 conf_data.set('VERSION', meson.project_version())
 
@@ -171,7 +174,7 @@ if cuda_dep.found()
     cufft_static = static_library('fft_kernels', 
                ['src/fft_kernels.cu', 'src/fft.cu'],
                cuda_args: ['-dc'], 
-               include_directories: ['src'],
+               include_directories: ['src', 'include'],
                override_options: ['buildtype=release'],
                build_by_default: true).extract_all_objects(recursive: false)
     
@@ -197,7 +200,7 @@ endif
 # Compile map static library, with generated JIT sources
 sl_bf_map = static_library('bf_map', 
             ['src/map.cpp'],
-            include_directories: ['src'],
+            include_directories: ['src', 'include'],
             build_by_default: true,
             dependencies: [cuda_dep],
             sources: jit_deps  # Makes sure stringify is run first
@@ -206,10 +209,11 @@ sl_bf_map = static_library('bf_map',
 # Now compile main bifrost library
 bifrost_lib = library('bifrost', [srcs_cpp, srcs_cu, 
                                   sl_cufft_device_link, sl_bf_map],              
-                     include_directories: ['src'],
+                     include_directories: ['src', 'include'],
                      dependencies: [cuda_dep, found_deps],
                      install: true
                    )
+                   # install_dir: py3.get_install_dir(subdir: 'bifrost')
 
 # Generate pkg-config file
 pkgconfig = import('pkgconfig')
@@ -224,13 +228,13 @@ if get_option('generate_python_wrapper')
     subdir('python')
 
     # Generate shared object
-    py3.extension_module('bifrost', [srcs_cpp, srcs_cu, 
-                                    sl_cufft_device_link, sl_bf_map],              
-                        include_directories: ['../src'],
-                        dependencies: [cuda_dep, found_deps],
-                        subdir: 'bifrost',
-                        install: true
-                   )
+    #py3.extension_module('bifrost', [srcs_cpp, srcs_cu, 
+    #                                sl_cufft_device_link, sl_bf_map],              
+    #                    include_directories: ['src', 'include/bifrost'],
+    #                    dependencies: [cuda_dep, found_deps],
+    #                    subdir: 'bifrost',
+    #                    install: true
+    #              )
     #TODO: PSRDADA GENERATION
     #TODO: CTYPESGEN MODERNIZE
 endif

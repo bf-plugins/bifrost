@@ -1,1 +1,1 @@
-python/bifrost/version/__main__.py
+bifrost/version/__main__.py

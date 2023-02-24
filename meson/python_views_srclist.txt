@@ -1,2 +1,2 @@
-python/bifrost/views/__init__.py
-python/bifrost/views/basic_views.py
+bifrost/views/__init__.py
+bifrost/views/basic_views.py

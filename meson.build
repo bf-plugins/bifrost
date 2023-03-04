@@ -94,6 +94,7 @@ libnames = [
 
 found_deps = []
 found_deps_dict = {}
+found_deps_bool_dict = {}
 foreach libname:libnames
 	lib = dependency('lib' + libname, required:false)
 	if not lib.found()
@@ -105,6 +106,7 @@ foreach libname:libnames
 	else
         message('Did not find ', libname)
 	endif
+    found_deps_bool_dict +=  {libname: lib.found()}
 endforeach
 
 if found_deps_dict.has_key('openmp') and not get_option('disable_openmp')
@@ -122,6 +124,8 @@ endif
 if found_deps_dict.has_key('psrdada') and not get_option('disable_psrdada')
     conf_data.set('HAVE_PSRDADA', '1')      # Note: not currently used
 endif
+
+summary(found_deps_bool_dict, section: 'Optional Dependencies', bool_yn: true)
 #---------------------------------------#
 
 #-------- Generate config.h ------------#
@@ -154,6 +158,10 @@ if cuda_dep.found()
         jit_deps += [_jit_dep]
     endforeach
 endif
+
+#TODO: Convert to generator, e.g.  blade/tools/jitify/meson.build 
+#in https://github.com/luigifcruz/blade
+#https://mesonbuild.com/Generating-sources.html#using-generator
 #------------------------------------------#
 
 #--------- BUILD _device_link.o (cuFFT) ----------#

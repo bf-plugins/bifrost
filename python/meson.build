@@ -28,6 +28,7 @@ bf_py_libbifrost = custom_target('libbifrost_generated',
                                     install: true,
                                     install_dir: py3.get_install_dir(subdir: 'bifrost'))
 
+
 python_sources = fs.read('../meson/python_srclist.txt').strip().split('\n')
 py3.install_sources([python_sources, bf_py_version], 
                     subdir: 'bifrost')

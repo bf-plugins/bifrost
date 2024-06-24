@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# This bash script generates .jit files from cuda source
+cd @SRC_DIR@ 
+@BUILD_ROOT@/stringify $1 > @BUILD_ROOT@/$1.jit

@@ -1,0 +1,29 @@
+# Generate Python wrapper
+option('generate_python_wrapper', type : 'boolean', value : true)
+
+# The following options manually disable certain parts of the code
+# These are all optional dependencies, so you only need to
+# disable if you specifically don't want to compile, or are running
+# into isssues for some reason (in which case, submit a bug report)
+
+# Option to disable CUDA 
+option('disable_cuda', type: 'boolean', value: false)
+
+# Option to disable HWLOC support
+option('disable_hwloc', type: 'boolean', value: false)
+
+# Option to disable Infiniband Verbs (UDP capture acceleration)
+option('disable_ibverbs', type: 'boolean', value: false)
+
+# Option to disable NUMA support for core binding to CPU
+option('disable_numa', type: 'boolean', value: false)
+
+# Disable codes using OpenMP
+option('disable_openmp', type: 'boolean', value: false)
+
+# Option to disable PSRDADA support 
+option('disable_psrdada', type: 'boolean', value: false)
+
+
+# Option to disable telemetry statistics
+option('disable_telemetry', type: 'boolean', value: false)
